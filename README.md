@@ -31,6 +31,42 @@ Execute the following command to install the required third party libraries:
 
     ```python run.py```
 
+# Docker container deployment
+
+1. Build and start the full stack with Docker Compose:
+
+    ```docker compose up --build -d```
+
+2. Open the services in your browser:
+
+    - App: http://localhost:5000
+    - Prometheus: http://localhost:9090
+    - Grafana: http://localhost:3000 (default user: admin / password: admin)
+
+3. The Prometheus datasource is auto-provisioned for Grafana to use the local Prometheus service.
+
+4. Check application metrics at:
+
+    - http://localhost:5000/metrics
+
+5. If you want to stop the containers:
+
+    ```docker compose down```
+
+# GitHub Actions
+
+O projeto já está alinhado para uso com GitHub Actions.
+O workflow está em `.github/workflows/python-app.yml` e executa:
+
+- checkout do repositório
+- instalação de dependências Python
+- verificação de sintaxe
+- execução de testes unitários
+- análise SAST com Bandit
+- build da imagem Docker
+
+> Obs: o arquivo `.gitlab-ci.yml` permanece no projeto, mas o fluxo principal de CI/CD para GitHub está no diretório `.github/workflows`.
+
 # Results
 
 ## Registration Page

@@ -1,9 +1,12 @@
-from flask import render_template, url_for, flash, redirect, request
+from flask import render_template, url_for, flash, redirect, request, Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-from todo_project import app, db, bcrypt
+from todo_project import (app, db, bcrypt, login_success, login_failure,
+                          task_created, task_deleted, user_registered,
+                          request_count)
 
 # Import the forms
-from todo_project.forms import (LoginForm, RegistrationForm, UpdateUserInfoForm, 
+from todo_project.forms import (LoginForm, RegistrationForm, UpdateUserInfoForm,
                                 UpdateUserPassword, TaskForm, UpdateTaskForm)
 
 # Import the Models
@@ -11,6 +14,19 @@ from todo_project.models import User, Task
 
 # Import 
 from flask_login import login_required, current_user, login_user, logout_user
+
+
+@app.after_request
+def record_request(response):
+    request_count.labels(method=request.method, endpoint=request.path, status=response.status_code).inc()
+    return response
+
+
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 
 @app.errorhandler(404)
@@ -44,10 +60,13 @@ def login():
         # Check if the user exists and the password is valid
         if user and bcrypt.check_password_hash(user.password, form.password.data):
             login_user(user)
-            task_form = TaskForm()
+            login_success.inc()
+            app.logger.info('Login success for %s', user.username)
             flash('Login Successfull', 'success')
             return redirect(url_for('all_tasks'))
         else:
+            login_failure.inc()
+            app.logger.warning('Login failed for %s', form.username.data)
             flash('Login Unsuccessful. Please check Username Or Password', 'danger')
     
     return render_template('login.html', title='Login', form=form)
@@ -66,10 +85,16 @@ def register():
 
     form = RegistrationForm()
     if form.validate_on_submit():
-        hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
+        hashed_password = bcrypt.generate_password_hash(form.password.data)
+        # Compatibilidade: Flask-Bcrypt versões recentes retornam string diretamente,
+        # versões antigas retornam bytes. Garantir que sempre temos string.
+        if isinstance(hashed_password, bytes):
+            hashed_password = hashed_password.decode('utf-8')
         user = User(username=form.username.data, password=hashed_password)
         db.session.add(user)
         db.session.commit()
+        user_registered.inc()
+        app.logger.info('Registered new user %s', user.username)
         flash(f'Account Created For {form.username.data}', 'success')
         return redirect(url_for('login'))
 
@@ -91,6 +116,8 @@ def add_task():
         task = Task(content=form.task_name.data, author=current_user)
         db.session.add(task)
         db.session.commit()
+        task_created.inc()
+        app.logger.info('Task created by %s: %s', current_user.username, task.content)
         flash('Task Created', 'success')
         return redirect(url_for('add_task'))
     return render_template('add_task.html', form=form, title='Add Task')
@@ -121,6 +148,8 @@ def delete_task(task_id):
     task = Task.query.get_or_404(task_id)
     db.session.delete(task)
     db.session.commit()
+    task_deleted.inc()
+    app.logger.info('Task deleted by %s: %s', current_user.username, task.content)
     flash('Task Deleted', 'info')
     return redirect(url_for('all_tasks'))
 
@@ -147,10 +176,14 @@ def change_password():
     form = UpdateUserPassword()
     if form.validate_on_submit():
         if bcrypt.check_password_hash(current_user.password, form.old_password.data):
-            current_user.password = bcrypt.generate_password_hash(form.new_password.data).decode('utf-8')
+            hashed_password = bcrypt.generate_password_hash(form.new_password.data)
+            # Compatibilidade: Flask-Bcrypt versões recentes retornam string diretamente
+            if isinstance(hashed_password, bytes):
+                hashed_password = hashed_password.decode('utf-8')
+            current_user.password = hashed_password
             db.session.commit()
             flash('Password Changed Successfully', 'success')
-            redirect(url_for('account'))
+            return redirect(url_for('account'))
         else:
             flash('Please Enter Correct Password', 'danger') 
 

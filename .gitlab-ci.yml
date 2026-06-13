@@ -1,0 +1,54 @@
+stages:
+  - lint
+  - build
+  - test
+  - sast
+  - deploy
+
+variables:
+  FLASK_APP: "run.py"
+  FLASK_ENV: "development"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip/
+
+lint:
+  stage: lint
+  image: python:3.11-slim
+  script:
+    - pip install --no-cache-dir -r requirements.txt
+    - python -m py_compile todo_project/run.py
+
+build:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    - apk add --no-cache py3-pip
+    - pip install --no-cache-dir -r requirements.txt
+  script:
+    - docker build -t task-manager-app -f todo_project/Dockerfile .
+
+test:
+  stage: test
+  image: python:3.11-slim
+  script:
+    - pip install --no-cache-dir -r requirements.txt
+    - python -m unittest discover -s todo_project
+
+sast:
+  stage: sast
+  image: python:3.11-slim
+  script:
+    - pip install --no-cache-dir bandit
+    - bandit -r todo_project
+
+deploy:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "Deployment step placeholder - configure deployment target"
+  when: manual

@@ -1,0 +1,47 @@
+name: Python application
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint-build-test-sast:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir -r requirements.txt
+
+    - name: Run Python syntax check
+      run: python -m py_compile todo_project/run.py
+
+    - name: Run unit tests
+      run: python -m unittest discover -s todo_project -p 'test_*.py'
+
+    - name: Install Bandit
+      run: pip install --no-cache-dir bandit
+
+    - name: Run Bandit SAST
+      run: bandit -r todo_project
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: todo_project/Dockerfile
+        push: false
+        tags: task-manager-app:latest
