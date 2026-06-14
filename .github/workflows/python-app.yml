@@ -6,71 +6,146 @@ on:
   pull_request:
     branches: [ main, master ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  lint-build-test-sast:
+
+  # ── 1. BUILD ────────────────────────────────────────────────────────────────
+  build:
+    name: Build & Syntax Check
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install --no-cache-dir -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
 
-    - name: Run Python syntax check
-      run: python -m py_compile todo_project/run.py
+      - name: Run Python syntax check
+        run: python -m py_compile todo_project/run.py
 
-    - name: Run unit tests
-      run: python -m unittest discover -s todo_project -p 'test_*.py'
+  # ── 2. TEST ─────────────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Install Bandit
-      run: pip install --no-cache-dir bandit
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Run Bandit SAST
-      run: bandit -r todo_project
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
 
-    - name: Run OWASP Dependency-Check
-      uses: dependency-check/Dependency-Check_Action@main
-      with:
-        project: 'task-manager'
-        path: '.'
-        format: 'ALL'
-        out: 'dependency-check-report'
-        args: >-
-          --failOnCVSS 7
-          --enableRetired
+      - name: Run unit tests
+        run: python -m unittest discover -s todo_project -p 'test_*.py'
 
-    - name: Start Flask app for OWASP ZAP scan
-      run: |
-        nohup python todo_project/run.py > flask.log 2>&1 &
-        sleep 12
-        curl -fsS http://127.0.0.1:5000/
+  # ── 3. SAST — BANDIT ────────────────────────────────────────────────────────
+  bandit_sast:
+    name: SAST - Bandit
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Run OWASP ZAP baseline scan
-      uses: zaproxy/action-baseline@v0.15.0
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        target: 'http://127.0.0.1:5000'
-        docker_name: 'ghcr.io/zaproxy/zaproxy:stable'
-        fail_action: 'false'
-        artifact_name: 'zap_scan'
-        allow_issue_writing: 'false'
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Install Bandit
+        run: pip install --no-cache-dir bandit
 
-    - name: Build Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: todo_project/Dockerfile
-        push: false
-        tags: task-manager-app:latest
+      - name: Run Bandit SAST
+        run: bandit -r todo_project
+
+  # ── 4. SCA — OWASP DEPENDENCY-CHECK ─────────────────────────────────────────
+  dependency_check:
+    name: SCA - OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'task-manager'
+          path: '.'
+          format: 'ALL'
+          out: 'dependency-check-report'
+          args: >-
+            --failOnCVSS 7
+            --enableRetired
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: dependency-check-report/
+
+  # ── 5. DAST — OWASP ZAP ─────────────────────────────────────────────────────
+  dast_zap:
+    name: DAST - OWASP ZAP
+    runs-on: ubuntu-latest
+    needs: [bandit_sast, dependency_check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Start Flask app
+        run: |
+          nohup python todo_project/run.py > flask.log 2>&1 &
+          sleep 12
+          curl -fsS http://127.0.0.1:5000/
+
+      - name: Run OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target: 'http://127.0.0.1:5000'
+          docker_name: 'ghcr.io/zaproxy/zaproxy:stable'
+          fail_action: 'false'
+          artifact_name: 'zap_scan'
+          allow_issue_writing: 'false'
+
+  # ── 6. DEPLOY — BUILD DOCKER IMAGE ──────────────────────────────────────────
+  deploy:
+    name: Deploy - Build Docker Image
+    runs-on: ubuntu-latest
+    needs: dast_zap
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: todo_project/Dockerfile
+          push: false
+          tags: task-manager-app:latest
