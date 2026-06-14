@@ -37,6 +37,17 @@ jobs:
     - name: Run Bandit SAST
       run: bandit -r todo_project
 
+    - name: Start Flask app for OWASP ZAP scan
+      run: |
+        nohup python todo_project/run.py > flask.log 2>&1 &
+        sleep 12
+        curl -fsS http://127.0.0.1:5000/
+
+    - name: Run OWASP ZAP baseline scan
+      run: |
+        docker pull owasp/zap2docker-stable
+        docker run --rm --network host owasp/zap2docker-stable zap-baseline.py -t http://127.0.0.1:5000 -r zap_report.html
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
