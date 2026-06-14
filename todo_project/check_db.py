@@ -5,6 +5,7 @@ Verifica sincronização entre modelos e tabelas, estrutura, e integridade.
 """
 import sys
 from pathlib import Path
+from sqlalchemy import func, select
 from todo_project import app, db
 from todo_project.models import User, Task
 
@@ -94,8 +95,13 @@ def check_table_structure(table_name):
 
 def check_table_data(table_name):
     """Conta registros em uma tabela"""
-    result = db.session.execute(db.text(f"SELECT COUNT(*) FROM {table_name}"))
-    count = result.scalar()
+    table = db.metadata.tables.get(table_name)
+    if table is None:
+        print(f"  Registros: tabela '{table_name}' não encontrada no metadata")
+        return
+
+    result = db.session.execute(select(func.count()).select_from(table))
+    count = result.scalar_one()
     print(f"  Registros: {count}")
 
 def validate_models_vs_tables(tables):

@@ -11,23 +11,26 @@ try:
     import flask as _flask
     if not hasattr(_flask, 'Markup'):
         setattr(_flask, 'Markup', _Markup)
+except ImportError:
+    _Markup = None
+
+if _Markup is not None:
     try:
         import jinja2 as _jinja2
         if not hasattr(_jinja2, 'Markup'):
             setattr(_jinja2, 'Markup', _Markup)
-    except Exception:
+    except ImportError:
         pass
-except Exception:
-    pass
 
 # Compatibilidade: Flask-WTF (versão 0.14.x) espera `flask.json.JSONEncoder`,
 # que foi removido em Flask 2.2+. Injetamos o `json.JSONEncoder` padrão.
 try:
     import flask.json as _fjson
-    if not hasattr(_fjson, 'JSONEncoder'):
-        setattr(_fjson, 'JSONEncoder', _json.JSONEncoder)
-except Exception:
-    pass
+except ImportError:
+    _fjson = None
+
+if _fjson is not None and not hasattr(_fjson, 'JSONEncoder'):
+    setattr(_fjson, 'JSONEncoder', _json.JSONEncoder)
 
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
