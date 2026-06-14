@@ -37,6 +37,14 @@ jobs:
     - name: Run Bandit SAST
       run: bandit -r todo_project
 
+    - name: Run OWASP Dependency-Check
+      uses: dependency-check-team/dependency-check-action@v2
+      with:
+        scan_path: '.'
+        format: 'ALL'
+        output_directory: 'dependency-check-report'
+        fail_build_on_severity: 'HIGH'
+
     - name: Start Flask app for OWASP ZAP scan
       run: |
         nohup python todo_project/run.py > flask.log 2>&1 &
