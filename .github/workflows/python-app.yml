@@ -38,12 +38,15 @@ jobs:
       run: bandit -r todo_project
 
     - name: Run OWASP Dependency-Check
-      uses: dependency-check-team/dependency-check-action@v2
+      uses: dependency-check/Dependency-Check_Action@main
       with:
-        scan_path: '.'
+        project: 'task-manager'
+        path: '.'
         format: 'ALL'
-        output_directory: 'dependency-check-report'
-        fail_build_on_severity: 'HIGH'
+        out: 'dependency-check-report'
+        args: >-
+          --failOnCVSS 7
+          --enableRetired
 
     - name: Start Flask app for OWASP ZAP scan
       run: |
